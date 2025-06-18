@@ -43,41 +43,23 @@ def maintain_cache_limit():
         cache_order.pop(oldest_file)
 
 
-@app.route('/video/<video_id>')
+@app.route('/video/<path:video_id>')
 def stream_video(video_id):
-    webm_path = os.path.join(VIDEO_CACHE_DIR, f"{video_id}.webm")
-    mp4_path = os.path.join(VIDEO_CACHE_DIR, f"{video_id}.mp4")
+    if not video_id.endswith('.mp4') and not video_id.endswith('.webm'):
+        return "Invalid video format.", 400
 
-    if os.path.exists(webm_path):
-        file_path = webm_path
-        content_type = "video/webm"
-    elif os.path.exists(mp4_path):
-        file_path = mp4_path
-        content_type = "video/mp4"
-    else:
+    filename = video_id
+    filepath = os.path.join(VIDEO_CACHE_DIR, filename)
+
+    if not os.path.exists(filepath):
         return "Video not cached yet. Submit a 9GAG link via the homepage.", 404
 
-    try:
-        def generate():
-            with open(file_path, "rb") as f:
-                while chunk := f.read(8192):
-                    yield chunk
+    # Move to the end of cache order for LRU
+    cache_order[filename] = True
+    maintain_cache_limit()
 
-        file_size = os.path.getsize(file_path)
+    return send_file(filepath, mimetype='video/webm' if filename.endswith('.webm') else 'video/mp4')
 
-        headers = {
-            "Content-Type": content_type,
-            "Content-Length": str(file_size),
-            "Accept-Ranges": "bytes",
-            "Content-Disposition": "inline"
-        }
-
-        cache_order[os.path.basename(file_path)] = True
-        maintain_cache_limit()
-
-        return Response(generate(), headers=headers, status=200)
-    except Exception as e:
-        return f"Error streaming video: {str(e)}", 500
 
 
 @app.route('/photo/<path:filename>')
