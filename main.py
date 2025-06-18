@@ -83,9 +83,31 @@ def home():
 @app.route('/convert')
 def convert():
     url = request.args.get('url', '')
+
     if not url.endswith('.mp4'):
-        return "Invalid 9GAG URL"
+        return "Invalid 9GAG .mp4 URL"
+
     video_id = url.split('/')[-1].replace('.mp4', '')
+    filename = f"{video_id}.mp4"
+    filepath = os.path.join(VIDEO_CACHE_DIR, filename)
+
+    # If not cached, download it
+    if not os.path.exists(filepath):
+        try:
+            r = requests.get(url, stream=True)
+            if r.status_code != 200:
+                return f"Failed to download video from 9GAG: {url}", 404
+
+            with open(filepath, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    f.write(chunk)
+
+            cache_order[filename] = True
+            maintain_cache_limit()
+
+        except Exception as e:
+            return f"Error downloading video: {str(e)}", 500
+
     proxy_url = request.host_url + f"video/{video_id}"
     return f"Direct proxy link: <a href='{proxy_url}'>{proxy_url}</a><br><br>Copy this into Discord."
 
