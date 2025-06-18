@@ -6,17 +6,38 @@ from flask import Flask, send_file, Response, redirect, request, abort
 from collections import OrderedDict
 from urllib.parse import urlparse
 import sys
+import subprocess
+
 
 app = Flask(__name__)
 
 # Config
-VIDEO_CACHE_DIR = 'cache'
+VIDEO_CACHE_DIR = "/data/cache"
+os.makedirs(VIDEO_CACHE_DIR, exist_ok=True)
 MAX_CACHE_SIZE = 100
 
 cache_order = OrderedDict()
 
 if not os.path.exists(VIDEO_CACHE_DIR):
     os.makedirs(VIDEO_CACHE_DIR)
+
+
+def convert_to_webm(mp4_path, webm_path):
+    if os.path.exists(webm_path):
+        return  # already converted
+
+    try:
+        subprocess.run([
+            "ffmpeg", "-i", mp4_path,
+            "-c:v", "libvpx-vp9",
+            "-b:v", "1M",
+            "-c:a", "libopus",
+            "-y",  # overwrite if exists
+            webm_path
+        ], check=True)
+        print(f"Converted to webm: {webm_path}")
+    except subprocess.CalledProcessError as e:
+        print(f"ffmpeg conversion failed: {e}")
 
 # Clean cache if too large
 def maintain_cache_limit():
@@ -113,7 +134,7 @@ def convert():
 
 # Main download logic from command-line input
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080)))
 
     input_url = sys.argv[1]
     parsed = urlparse(input_url)
