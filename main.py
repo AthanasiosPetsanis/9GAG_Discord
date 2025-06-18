@@ -2,7 +2,7 @@
 
 import os
 import requests
-from flask import Flask, send_file, Response, redirect, request
+from flask import Flask, send_file, Response, redirect, request, abort
 from collections import OrderedDict
 from urllib.parse import urlparse
 import sys
@@ -34,12 +34,30 @@ def stream_video(video_id):
     filename = f"{video_id}.mp4"
     filepath = os.path.join(VIDEO_CACHE_DIR, filename)
 
-    if os.path.exists(filepath):
+    if not os.path.exists(filepath):
+        return "Video not found. Submit it via the homepage first.", 404
+
+    try:
+        def generate():
+            with open(filepath, "rb") as f:
+                while chunk := f.read(8192):
+                    yield chunk
+
+        file_size = os.path.getsize(filepath)
+
+        headers = {
+            "Content-Type": "video/mp4",
+            "Content-Length": str(file_size),
+            "Accept-Ranges": "bytes",
+            "Content-Disposition": "inline"
+        }
+
         if filename in cache_order:
             cache_order.move_to_end(filename)
-        return send_file(filepath, mimetype='video/mp4', as_attachment=False, conditional=True)
 
-    return f"Video not cached yet. Run this script with a valid 9GAG .mp4 URL to cache it.", 404
+        return Response(generate(), headers=headers, status=200)
+    except Exception as e:
+        return f"Error streaming video: {str(e)}", 500
 
 # Intuitive route: /photo/<filename>.mp4
 @app.route('/photo/<path:filename>')
