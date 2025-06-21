@@ -6,6 +6,8 @@ from flask import Flask, send_file, Response, redirect, request, abort
 from collections import OrderedDict
 from urllib.parse import urlparse
 import sys
+import mimetypes
+import re
 
 app = Flask(__name__)
 
@@ -35,29 +37,35 @@ def stream_video(video_id):
     filepath = os.path.join(VIDEO_CACHE_DIR, filename)
 
     if not os.path.exists(filepath):
-        return "Video not found. Submit it via the homepage first.", 404
+        return "Video not found.", 404
 
-    try:
-        def generate():
-            with open(filepath, "rb") as f:
-                while chunk := f.read(8192):
-                    yield chunk
+    file_size = os.path.getsize(filepath)
+    range_header = request.headers.get('Range', None)
+    content_type = mimetypes.guess_type(filepath)[0] or 'application/octet-stream'
 
-        file_size = os.path.getsize(filepath)
+    if range_header:
+        byte1, byte2 = 0, None
+        m = re.search(r'bytes=(\d+)-(\d*)', range_header)
+        if m:
+            g = m.groups()
+            byte1 = int(g[0])
+            if g[1]:
+                byte2 = int(g[1])
+        byte2 = byte2 or file_size - 1
 
-        headers = {
-            "Content-Type": "video/mp4",
-            "Content-Length": str(file_size),
-            "Accept-Ranges": "bytes",
-            "Content-Disposition": "inline"
-        }
+        length = byte2 - byte1 + 1
+        with open(filepath, 'rb') as f:
+            f.seek(byte1)
+            data = f.read(length)
 
-        if filename in cache_order:
-            cache_order.move_to_end(filename)
+        rv = Response(data, 206, mimetype=content_type, direct_passthrough=True)
+        rv.headers.add('Content-Range', f'bytes {byte1}-{byte2}/{file_size}')
+        rv.headers.add('Accept-Ranges', 'bytes')
+        rv.headers.add('Content-Length', str(length))
+        rv.headers.add('Content-Disposition', 'inline')
+        return rv
 
-        return Response(generate(), headers=headers, status=200)
-    except Exception as e:
-        return f"Error streaming video: {str(e)}", 500
+    return send_file(filepath, mimetype=content_type, as_attachment=False)
 
 # Intuitive route: /photo/<filename>.mp4
 @app.route('/photo/<path:filename>')
